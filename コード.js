@@ -663,7 +663,6 @@ function createSpreadsheet(
     else if (category === "購入") range2.setBackground("#ffe4e1");
     else if (category === "電気") range2.setBackground("#ffff00");
   }
-  applyUnitColors(newSheet, finalData);
 
   // 連番の計算式を値に変換
   const lastRow = newSheet.getLastRow();
@@ -681,6 +680,13 @@ function createSpreadsheet(
     2,
     lastRow
   );
+
+  // ユニット単位で背景色を適用
+  const finalDataWithoutHeader = finalData.slice(1); // ヘッダー行を除外
+  applyUnitColors(newSheet, finalDataWithoutHeader);
+
+  console.log("Final Data Without Header:", finalDataWithoutHeader);
+  applyUnitColors(newSheet, finalDataWithoutHeader);
 
   return newSpreadsheet;
 }
@@ -865,26 +871,43 @@ function applyUnitColors(sheet, data) {
   const ranges = [];
   const backgrounds = [];
 
-  for (let i = DATA_START_ROW; i <= data.length; i++) {
-    const currentUnit = data[i - 1][UNIT_COLUMN - 1];
+  for (let i = 0; i < data.length; i++) {
+    const currentUnit = data[i][UNIT_COLUMN - 1];
     if (currentUnit !== lastUnit) {
       colorFlag = !colorFlag;
       lastUnit = currentUnit;
     }
-    ranges.push(i);
+    ranges.push(i + DATA_START_ROW);
     backgrounds.push(colorFlag ? "#d3d3d3" : "#f0f0f0");
   }
 
-  const range = sheet.getRange(DATA_START_ROW, UNIT_COLUMN, data.length - 1, 1);
+  const range = sheet.getRange(
+    DATA_START_ROW,
+    1,
+    data.length,
+    sheet.getLastColumn()
+  );
   const backgroundColors = range.getBackgrounds();
 
   for (let i = 0; i < ranges.length; i++) {
     const rowIndex = ranges[i] - DATA_START_ROW;
-    backgroundColors[rowIndex][0] = backgrounds[i];
+    for (let j = 0; j < backgroundColors[rowIndex].length; j++) {
+      backgroundColors[rowIndex][j] = backgrounds[i];
+    }
   }
 
   range.setBackgrounds(backgroundColors);
 }
+
+// ユニット単位で背景色を適用
+const finalDataWithoutHeader = finalData.slice(1); // ヘッダー行を除外
+applyUnitColors(newSheet, finalDataWithoutHeader);
+
+console.log("Final Data Without Header:", finalDataWithoutHeader);
+applyUnitColors(newSheet, finalDataWithoutHeader);
+
+// ...existing code...
+
 /**
  * 複数のセルに背景色を設定する関数
  * @param {Sheet} sheet - 対象のシート
