@@ -1,5 +1,6 @@
 const settings = loadSettings();
 const COLUMN_NAMES = settings.COLUMN_NAMES;
+///DEF
 
 /**
  * 設定情報をGoogleスプレッドシートから読み取る関数
