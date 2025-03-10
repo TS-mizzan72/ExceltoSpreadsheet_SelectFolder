@@ -1,6 +1,5 @@
 const settings = loadSettings();
 const COLUMN_NAMES = settings.COLUMN_NAMES;
-///DEF
 
 /**
  * 設定情報をGoogleスプレッドシートから読み取る関数
@@ -46,18 +45,57 @@ function loadSettings() {
  */
 function combineExcelSheets() {
   try {
-    const folder = DriveApp.getFolderById(settings.FOLDER_ID);
+    const folderId = selectFolder();
+    if (!folderId) throw new Error("フォルダが選択されませんでした");
+
+    const folder = DriveApp.getFolderById(folderId);
     if (!folder) throw new Error("指定されたフォルダが見つかりません");
 
-    const fileIterator = folder.getFiles();
-    const {
-      combinedDataRows,
-      processedFiles,
-      jNumberSet,
-      unitNumberSet,
-      categories,
-      filenamePartsByCategory,
-    } = processFiles(fileIterator);
+    const subFolders = folder.getFolders();
+    const targetFolders = [];
+
+    while (subFolders.hasNext()) {
+      const subFolder = subFolders.next();
+      const subFolderName = subFolder.getName();
+      if (
+        !subFolderName.startsWith("@") &&
+        subFolderName.includes("部品リスト")
+      ) {
+        targetFolders.push(subFolder);
+      }
+    }
+
+    if (targetFolders.length === 0) {
+      throw new Error("部品リストを含むフォルダが見つかりませんでした");
+    }
+
+    let combinedDataRows = [];
+    let processedFiles = 0;
+    const jNumberSet = new Set();
+    const unitNumberSet = new Set();
+    const categories = new Set();
+    const filenamePartsByCategory = {
+      購入: [],
+      製作: [],
+      電気: [],
+    };
+
+    targetFolders.forEach((targetFolder) => {
+      const fileIterator = targetFolder.getFiles();
+      const result = processFiles(fileIterator);
+      combinedDataRows = combinedDataRows.concat(result.combinedDataRows);
+      processedFiles += result.processedFiles;
+      result.jNumberSet.forEach((jNumber) => jNumberSet.add(jNumber));
+      result.unitNumberSet.forEach((unitNumber) =>
+        unitNumberSet.add(unitNumber)
+      );
+      result.categories.forEach((category) => categories.add(category));
+      Object.keys(result.filenamePartsByCategory).forEach((key) => {
+        filenamePartsByCategory[key] = filenamePartsByCategory[key].concat(
+          result.filenamePartsByCategory[key]
+        );
+      });
+    });
 
     if (processedFiles === 0)
       throw new Error("処理可能なファイルが見つかりませんでした");
@@ -818,7 +856,7 @@ function applyConditionalFormatting(sheet, data) {
  * @param {Array<Array<string>>} data - データ配列
  */
 function applyUnitColors(sheet, data) {
-  const UNIT_COLUMN = 5;
+  const UNIT_COLUMN = 5; // E列
   const DATA_START_ROW = 2;
 
   if (data.length <= 1) return;
@@ -833,14 +871,20 @@ function applyUnitColors(sheet, data) {
       colorFlag = !colorFlag;
       lastUnit = currentUnit;
     }
-    ranges.push([i, UNIT_COLUMN]);
+    ranges.push(i);
     backgrounds.push(colorFlag ? "#d3d3d3" : "#f0f0f0");
   }
 
   const range = sheet.getRange(DATA_START_ROW, UNIT_COLUMN, data.length - 1, 1);
-  range.setBackgrounds(backgrounds.map((color) => [color]));
-}
+  const backgroundColors = range.getBackgrounds();
 
+  for (let i = 0; i < ranges.length; i++) {
+    const rowIndex = ranges[i] - DATA_START_ROW;
+    backgroundColors[rowIndex][0] = backgrounds[i];
+  }
+
+  range.setBackgrounds(backgroundColors);
+}
 /**
  * 複数のセルに背景色を設定する関数
  * @param {Sheet} sheet - 対象のシート
@@ -853,4 +897,56 @@ function setBackgroundColors(sheet, ranges) {
 
   const range = sheet.getRange(ranges[0][0], ranges[0][1], ranges.length, 1);
   range.setBackgrounds(backgrounds);
+}
+
+/**
+ * ユーザーに指定されたフォルダ内のサブフォルダ選択ダイアログを表示し、選択されたフォルダのIDを取得する関数
+ * @returns {string} - 選択されたフォルダのID
+ */
+function selectFolder() {
+  const parentFolderId = "1v9HrinPjhW-ey5WSrX8GNouyt3eWDqxR"; // 指定されたフォルダのID
+  const parentFolder = DriveApp.getFolderById(parentFolderId);
+  const folders = parentFolder.getFolders();
+  const folderNames = [];
+  const folderIds = [];
+
+  while (folders.hasNext()) {
+    const folder = folders.next();
+    const folderName = folder.getName();
+    if (!folderName.startsWith("@")) {
+      folderNames.push(folderName);
+      folderIds.push(folder.getId());
+    }
+  }
+
+  const ui = SpreadsheetApp.getUi();
+  const response = ui.prompt(
+    "フォルダ選択",
+    "以下のフォルダから選択してください:\n" + folderNames.join("\n"),
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (response.getSelectedButton() == ui.Button.OK) {
+    const folderName = response.getResponseText();
+    const folderIndex = folderNames.indexOf(folderName);
+    if (folderIndex !== -1) {
+      return folderIds[folderIndex];
+    } else {
+      ui.alert("無効なフォルダ名です。");
+      return null;
+    }
+  } else {
+    ui.alert("フォルダ選択がキャンセルされました。");
+    return null;
+  }
+}
+
+/**
+ * スプレッドシートを開いたときにカスタムメニューを追加する関数
+ */
+function onOpen() {
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu("変換メニュー")
+    .addItem("対象フォルダの選択", "combineExcelSheets")
+    .addToUi();
 }
